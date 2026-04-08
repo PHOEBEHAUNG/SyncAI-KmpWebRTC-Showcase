@@ -1,0 +1,23 @@
+PODS:
+  - composeApp (1.0.0)
+  - GoogleWebRTC (1.1.31999)
+
+DEPENDENCIES:
+  - composeApp (from `../composeApp`)
+  - GoogleWebRTC (= 1.1.31999)
+
+SPEC REPOS:
+  trunk:
+    - GoogleWebRTC
+
+EXTERNAL SOURCES:
+  composeApp:
+    :path: "../composeApp"
+
+SPEC CHECKSUMS:
+  composeApp: 062d3d46ada3e09a293094867b2e2654b17ec4fe
+  GoogleWebRTC: b39a78c4f5cc6b0323415b9233db03a2faa7b0f0
+
+PODFILE CHECKSUM: fc5f5e75392f393c85cea999b3da4303ef1fd808
+
+COCOAPODS: 1.16.2

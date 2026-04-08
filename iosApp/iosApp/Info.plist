@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs microphone access to send audio during WebRTC streaming.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to send video during WebRTC streaming.</string>
+	<!-- Allow HTTP connections (required for local network streaming) -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- Local network access (Bonjour/mDNS) -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This app needs local network access to connect to the streaming server.</string>
+</dict>
+</plist>

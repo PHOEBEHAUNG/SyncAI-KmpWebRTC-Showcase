@@ -1,45 +1,50 @@
-# SyncAI-App-KmpWebRTC
+# SyncAI-KmpWebRTC-Showcase
 
-SyncAI WebRTC KMP 的範例與整合測試 App，展示並驗證 [SyncAI-Lib-KmpWebRTC](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC) 在真實裝置上的完整功能。
+A Kotlin Multiplatform (KMP) showcase app demonstrating the features and API of [SyncAI-Lib-KmpWebRTC](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC) — a cross-platform WebRTC library for Android, iOS, and JVM Desktop.
 
-## 目錄
+## Table of Contents
 
-- [關於此 App](#關於此-app)
-- [專案架構](#專案架構)
-- [平台支援](#平台支援)
-- [目前功能](#目前功能)
-- [Level 3 測試計畫](#level-3-測試計畫)
-- [Library 依賴](#library-依賴)
-- [測試基礎建設](#測試基礎建設)
-- [建置與執行](#建置與執行)
-
----
-
-## 關於此 App
-
-此 App 是 `SyncAI-Lib-KmpWebRTC` 的配套範例 App，用於：
-
-1. **展示 Library API 用法** — 以最小可運行的程式碼示範各種 `MediaConfig` 模式
-2. **Level 3 手動整合測試** — 在真實 Android/iOS/JVM 裝置上執行端對端驗證
-3. **跨平台回歸驗證** — 確保 Library 在 Android、iOS、JVM 三個平台行為一致
+- [About This App](#about-this-app)
+- [Project Structure](#project-structure)
+- [Platform Support](#platform-support)
+- [Showcase Screens](#showcase-screens)
+- [Library Components Demonstrated](#library-components-demonstrated)
+- [Adding the Library Dependency](#adding-the-library-dependency)
+- [Build & Run](#build--run)
+- [Related Links](#related-links)
 
 ---
 
-## 專案架構
+## About This App
+
+This app is the companion showcase for `SyncAI-Lib-KmpWebRTC`. It demonstrates how to integrate and use the library's core APIs in a real Compose Multiplatform app, covering:
+
+1. **All `MediaConfig` modes** — receive video (WHEP), send audio/video (WHIP), bidirectional audio, and video call modes, each shown with minimal working code.
+2. **DataChannel messaging** — sending and receiving text and binary messages over a WebRTC data channel.
+3. **Multi-session / Multi-view** — running multiple independent `WebRTCSession` instances simultaneously and rendering several streams in a grid layout.
+4. **Real-time stats** — displaying live connection metrics (`WebRTCStats`) including bitrate, RTT, and packet loss.
+
+---
+
+## Project Structure
 
 ```
-SyncAI-App-KmpWebRTC/
+SyncAI-KmpWebRTC-Showcase/
 ├── composeApp/
 │   └── src/
 │       ├── commonMain/kotlin/com/codingdrama/vlmwebrtc/
-│       │   ├── App.kt              # 主畫面（收流 + 推流）
-│       │   ├── Platform.kt         # expect 平台抽象
+│       │   ├── App.kt                # App entry point & tab navigation
+│       │   ├── DataChannelScreen.kt  # DataChannel messaging demo
+│       │   ├── DualSessionScreen.kt  # Two independent sessions simultaneously
+│       │   ├── MultiViewScreen.kt    # Multi-stream grid view (1×2 / 2×2)
+│       │   ├── Greeting.kt           # Platform greeting helper
+│       │   ├── Platform.kt           # expect platform abstraction
 │       │   └── permission/
-│       │       └── Permission.kt   # 跨平台權限抽象
-│       ├── androidMain/            # Android 平台實作
-│       ├── iosMain/                # iOS 平台實作
-│       └── jvmMain/                # JVM/Desktop 平台實作
-├── iosApp/                         # iOS Xcode 專案
+│       │       └── Permission.kt     # Cross-platform permission abstraction
+│       ├── androidMain/              # Android platform implementations
+│       ├── iosMain/                  # iOS platform implementations
+│       └── jvmMain/                  # JVM/Desktop platform implementations
+├── iosApp/                           # iOS Xcode project
 │   ├── Podfile
 │   └── iosApp.xcworkspace
 └── build.gradle.kts
@@ -47,157 +52,130 @@ SyncAI-App-KmpWebRTC/
 
 ---
 
-## 平台支援
+## Platform Support
 
-| 平台 | 狀態 | 用途 |
-|------|------|------|
-| **Android** (實機) | ✅ | 主要測試裝置 |
-| **iOS arm64** (實機) | ✅ | 主要測試裝置 |
-| **JVM Desktop** (macOS/Linux) | ✅ | 多觀眾測試的第 3+ viewer |
-| iOS Simulator | ❌ | Library 不支援 |
-| JavaScript / WasmJS | ❌ | Library 尚未支援 |
-
----
-
-## 目前功能
-
-| 功能 | MediaConfig | 狀態 |
-|------|-------------|------|
-| 接收視訊串流 (WHEP) | `RECEIVE_VIDEO` | ✅ |
-| 推送麥克風音訊 (WHIP) | `SEND_AUDIO` | ✅ |
-| 推送鏡頭視訊 (WHIP) | `SEND_VIDEO` | 🚧 規劃中 |
-| 雙向音訊通話 | `BIDIRECTIONAL_AUDIO` | 🚧 規劃中 |
-| 雙向視訊通話 | `VIDEO_CALL` | 🚧 規劃中 |
-| DataChannel 訊息 | 自訂 MediaConfig | 🚧 規劃中 |
-| 多個 VideoRenderer | 多 session | 🚧 規劃中 |
+| Platform | Status | Notes |
+|----------|--------|-------|
+| **Android** (physical device) | ✅ | Primary showcase target |
+| **iOS arm64** (physical device) | ✅ | Primary showcase target |
+| **JVM Desktop** (macOS / Linux) | ✅ | Useful as an additional viewer |
+| iOS Simulator | ❌ | Not supported by the library |
+| JavaScript / WasmJS | ❌ | Not yet supported by the library |
 
 ---
 
-## Level 3 測試計畫
+## Showcase Screens
 
-此 App 需要支援 [SyncAI-Lib-KmpWebRTC Level 3 測試規格](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC/blob/main/docs/LEVEL3_MANUAL_TEST_GUIDE.md) 中的 Client 端測試（C-1 ~ C-5，共 23 項）。
+The app is organized into four tabs, each showcasing a different aspect of the library:
 
-### C-1: Bidirectional Call (5 項)
-- `VIDEO_CALL` / `BIDIRECTIONAL_AUDIO` 雙向 session
-- `CameraPreview` 本地鏡頭預覽
-- 鏡頭切換（前/後鏡頭）
-- Mute / 關閉視訊 controls
-- DataChannel + 視訊同時運作
+### 📡 Single — Core Session API
 
-### C-2: External IoT (5 項)
-- URL 輸入欄位（可指定任意 endpoint）
-- `WebRTCStats` 即時顯示（bitrate / latency / packet loss）
-- 雙 session 同時（`RECEIVE_VIDEO` + `SEND_AUDIO`）
-- DataChannel JSON 指令 UI
+The primary screen for exploring the library's session management.
 
-### C-3: Multiple VideoRenderer (4 項)
-- 2~4 個 `VideoRenderer` 並排 / Grid 排版
-- 每個 session 獨立 connect / close
-- per-session `SessionState` 顯示
+- Enter any WHEP / WHIP endpoint URL.
+- Select a `MediaConfig` mode from the chip strip:
+  | Mode | `MediaConfig` | Description |
+  |------|--------------|-------------|
+  | Receive Video | `RECEIVE_VIDEO` | Pull a video stream via WHEP |
+  | Send Video | `SEND_VIDEO` | Push camera video via WHIP with `CameraPreview` |
+  | Send Audio | `SEND_AUDIO` | Push microphone audio via WHIP |
+  | Intercom | `BIDIRECTIONAL_AUDIO` | Full-duplex audio session |
+  | Video Call | `VIDEO_CALL` | Remote video + local camera PiP overlay |
+- Live `SessionState` indicator (Idle / Connecting / Connected / Reconnecting / Error / Closed).
+- `WebRTCStats` panel showing bitrate, RTT, and packet loss when connected.
+- Mute, video toggle, and camera-switch controls for supported modes.
 
-### C-4: 1-to-N (4 項)
-- `SEND_VIDEO` 推鏡頭影像（含 JVM Desktop）
-- `CameraPreview` 本地預覽
-- Reconnect 狀態顯示
+### 💬 DataChannel — Messaging over WebRTC
 
-### C-5: DataChannel (5 項)
-- 文字 / Binary 訊息發送與接收 UI
-- 多 DataChannel 管理
-- 高頻訊息吞吐量顯示
+Demonstrates the `DataChannel` API for sending and receiving messages.
+
+- Connect via WHIP or WHEP with a configurable endpoint URL.
+- Create up to two data channels with configurable names and reliability.
+- Send text messages and view incoming text / binary messages in a scrollable log.
+- Displays per-channel `DataChannelState` (connecting / open / closing / closed).
+
+### 📺 Multi-View — Multiple Simultaneous Streams
+
+Showcases running multiple `WebRTCSession` instances at the same time with a grid layout.
+
+- Toggle between **1×2** (two streams) and **2×2** (four streams) grid layouts.
+- Each cell has its own URL input and independent connect / disconnect lifecycle.
+- Supports `RECEIVE_VIDEO` and `VIDEO_CALL` modes per cell.
+- Per-session `SessionState` dot indicator in each cell overlay.
+
+### 🔀 Dual — Two Independent Sessions
+
+Shows how to run two fully independent sessions side by side.
+
+- **Session A** — optimized for receiving video (`RECEIVE_VIDEO`) or a video call (`VIDEO_CALL`).
+- **Session B** — optimized for sending audio (`SEND_AUDIO`), intercom (`BIDIRECTIONAL_AUDIO`), or sending video (`SEND_VIDEO`).
+- Each panel has its own URL input, mode selector, and media controls.
 
 ---
 
-## Library 依賴
+## Library Components Demonstrated
+
+| Component | Description |
+|-----------|-------------|
+| `WebRTCSession` | Unified session manager for WHEP, WHIP, and bidirectional streams |
+| `HttpSignalingAdapter` | HTTP-based WHEP/WHIP signaling adapter |
+| `MediaConfig` | Declares the media direction and type of a session |
+| `SessionState` | Reactive state flow: Idle → Connecting → Connected → Reconnecting / Error / Closed |
+| `VideoRenderer` | Cross-platform Composable for rendering a remote video stream |
+| `CameraPreview` | Cross-platform Composable for local camera preview |
+| `AudioPushPlayer` | Composable that manages microphone capture and audio push |
+| `WebRTCStats` | Real-time connection metrics (bitrate, RTT, packet loss) |
+| `DataChannel` | Send and receive text/binary messages over a WebRTC data channel |
+| `DataChannelConfig` | Configuration for reliable or unreliable data channels |
+| `DataChannelListenerAdapter` | Callback adapter for data channel events and incoming messages |
+
+---
+
+## Adding the Library Dependency
 
 ```kotlin
 // settings.gradle.kts
 dependencyResolutionManagement {
     repositories {
-        mavenLocal()   // 本地開發使用
-        // 或 GitHub Packages（發布版本）
+        mavenLocal()        // for local development builds
+        // mavenCentral()   // for published releases
     }
 }
 
 // composeApp/build.gradle.kts
-implementation("com.syncrobotic:syncai-lib-kmpwebrtc:1.1.0")
-```
-
-### Library 提供的核心元件
-
-| 元件 | 說明 |
-|------|------|
-| `WebRTCSession` | 統一的 session 管理（WHEP/WHIP/雙向） |
-| `HttpSignalingAdapter` | HTTP WHEP/WHIP 信令適配器 |
-| `MediaConfig` | 媒體方向設定（RECEIVE_VIDEO / SEND_VIDEO / SEND_AUDIO / VIDEO_CALL ...） |
-| `VideoRenderer` | 跨平台視訊渲染 Composable |
-| `CameraPreview` | 本地鏡頭預覽 Composable |
-| `AudioPushPlayer` | 麥克風推流 Composable |
-| `WebRTCStats` | 即時連線統計（bitrate / RTT / packet loss） |
-
----
-
-## 測試基礎建設
-
-Level 3 測試需搭配 [SyncAI-Lib-KmpWebRTC](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC) 的測試 infra 一起使用。
-
-### 啟動測試 Server
-
-```bash
-# 在 SyncAI-Lib-KmpWebRTC 專案下
-cd test-infra/
-
-# 啟動 MediaMTX + FFmpeg + Pion IoT
-docker compose up -d
-
-# 啟動 SignalingProxy (JVM in-process)
-cd ..
-./gradlew jvmTest --tests "com.syncrobotic.webrtc.level3.server.SignalingProxyServerTest"
-```
-
-### 服務一覽
-
-| 服務 | 位址 | 用途 |
-|------|------|------|
-| MediaMTX | `<HOST>:8889` | WHEP/WHIP media server |
-| SignalingProxy | `<HOST>:8090` | BE 信令代理（S-2, S-5 測試用） |
-| Pion IoT | `<HOST>:8080` | IoT 裝置模擬（S-3, C-5 測試用） |
-| FFmpeg | — | 模擬 IoT 攝影機推 RTSP 串流 |
-
-### 取得本機 LAN IP（給行動裝置連線）
-
-```bash
-# macOS
-ipconfig getifaddr en0
+commonMain.dependencies {
+    implementation("com.syncrobotic:syncai-lib-kmpwebrtc:1.1.0")
+}
 ```
 
 ---
 
-## 建置與執行
+## Build & Run
 
-### 前置需求
+### Prerequisites
 
-- **Android:** Android Studio / `./gradlew` + Android SDK
-- **iOS:** Xcode 15+、CocoaPods (`pod install`)
+- **Android:** Android Studio (or `./gradlew`) with Android SDK installed
+- **iOS:** Xcode 15+, CocoaPods (`pod install`)
 - **JVM:** JDK 11+
 
 ### Android
 
 ```bash
 ./gradlew :composeApp:assembleDebug
-# 或直接在 Android Studio 執行
+# or run directly from Android Studio
 ```
 
-### iOS（實機）
+### iOS (physical device only)
 
 ```bash
-# 安裝 Pods（首次）
+# Install Pods (first time)
 cd iosApp && pod install && cd ..
 
-# 在 Xcode 開啟
+# Open in Xcode
 open iosApp/iosApp.xcworkspace
 ```
 
-> ⚠️ **只支援 iOS 實機（arm64）**，模擬器目前不支援。
+> ⚠️ **iOS physical device (arm64) only.** The library does not support the iOS Simulator.
 
 ### JVM Desktop
 
@@ -205,20 +183,18 @@ open iosApp/iosApp.xcworkspace
 ./gradlew :composeApp:run
 ```
 
-### 發布 Library 到 Local Maven（本地開發）
+### Publishing the Library to Local Maven (for local development)
 
 ```bash
-# 在 SyncAI-Lib-KmpWebRTC 專案下
+# Run from the SyncAI-Lib-KmpWebRTC project directory
 ./gradlew publishToMavenLocal
 ```
 
 ---
 
-## 相關連結
+## Related Links
 
-- [SyncAI-Lib-KmpWebRTC](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC) — Library 主專案
-- [Level 3 測試指南](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC/blob/main/docs/LEVEL3_MANUAL_TEST_GUIDE.md)
-- [Level 3 Infra 規劃](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC/blob/main/docs/LEVEL3_INFRA_PLAN.md)
+- [SyncAI-Lib-KmpWebRTC](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC) — The library this app showcases
 
 ---
 

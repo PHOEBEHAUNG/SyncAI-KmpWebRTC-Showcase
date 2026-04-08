@@ -1,162 +1,224 @@
-# VLMWebRTC
+# SyncAI-App-KmpWebRTC
 
-VLM WebRTC Streaming App - 一個 Kotlin Multiplatform 專案，支援 Android、iOS、Web、Desktop (JVM)。
+SyncAI WebRTC KMP 的範例與整合測試 App，展示並驗證 [SyncAI-Lib-KmpWebRTC](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC) 在真實裝置上的完整功能。
 
-## 📋 目錄
+## 目錄
 
+- [關於此 App](#關於此-app)
 - [專案架構](#專案架構)
-- [功能特性](#功能特性)
-- [依賴關係](#依賴關係)
+- [平台支援](#平台支援)
+- [目前功能](#目前功能)
+- [Level 3 測試計畫](#level-3-測試計畫)
+- [Library 依賴](#library-依賴)
+- [測試基礎建設](#測試基礎建設)
 - [建置與執行](#建置與執行)
+
+---
+
+## 關於此 App
+
+此 App 是 `SyncAI-Lib-KmpWebRTC` 的配套範例 App，用於：
+
+1. **展示 Library API 用法** — 以最小可運行的程式碼示範各種 `MediaConfig` 模式
+2. **Level 3 手動整合測試** — 在真實 Android/iOS/JVM 裝置上執行端對端驗證
+3. **跨平台回歸驗證** — 確保 Library 在 Android、iOS、JVM 三個平台行為一致
 
 ---
 
 ## 專案架構
 
 ```
-VLMWebRTC/
-├── composeApp/                     # KMP 共用程式碼
+SyncAI-App-KmpWebRTC/
+├── composeApp/
 │   └── src/
-│       ├── commonMain/             # 所有平台共用
-│       │   └── kotlin/
-│       │       └── com/codingdrama/vlmwebrtc/
-│       │           ├── App.kt                  # 主應用程式
-│       │           ├── audio/                  # 音訊模組
-│       │           │   ├── AudioPushPlayer.kt  # expect 音訊推送播放器
-│       │           │   └── WhipSignaling.kt    # WHIP 信令協議
-│       │           └── ...
-│       ├── androidMain/            # Android 實作
-│       │   └── kotlin/.../audio/
-│       │       └── AudioPushPlayer.android.kt
-│       ├── iosMain/                # iOS 實作
-│       │   └── kotlin/.../audio/
-│       │       └── AudioPushPlayer.ios.kt
-│       ├── jvmMain/                # JVM/Desktop 實作
-│       │   └── kotlin/.../audio/
-│       │       └── AudioPushPlayer.jvm.kt
-│       ├── jsMain/                 # JavaScript (瀏覽器) 實作
-│       │   └── kotlin/.../audio/
-│       │       └── AudioPushPlayer.js.kt
-│       └── wasmJsMain/             # WebAssembly 實作
-│           └── kotlin/.../audio/
-│               └── AudioPushPlayer.wasmJs.kt
-├── iosApp/                         # iOS 應用入口 (Xcode 專案)
-│   ├── Podfile                     # CocoaPods 依賴
-│   └── iosApp/
-├── build-ios.sh                    # iOS 建置腳本
+│       ├── commonMain/kotlin/com/codingdrama/vlmwebrtc/
+│       │   ├── App.kt              # 主畫面（收流 + 推流）
+│       │   ├── Platform.kt         # expect 平台抽象
+│       │   └── permission/
+│       │       └── Permission.kt   # 跨平台權限抽象
+│       ├── androidMain/            # Android 平台實作
+│       ├── iosMain/                # iOS 平台實作
+│       └── jvmMain/                # JVM/Desktop 平台實作
+├── iosApp/                         # iOS Xcode 專案
+│   ├── Podfile
+│   └── iosApp.xcworkspace
 └── build.gradle.kts
 ```
 
-### 模組說明
+---
 
-| 模組 | 說明 |
-|------|------|
-| `commonMain` | 平台無關的共用程式碼，包含 expect 宣告 |
-| `androidMain` | Android 平台 actual 實作 |
-| `iosMain` | iOS 平台 actual 實作 (使用 GoogleWebRTC) |
-| `jvmMain` | JVM/Desktop 平台 actual 實作 (使用 webrtc-java) |
-| `jsMain` | JavaScript 瀏覽器 actual 實作 (使用原生 RTCPeerConnection) |
-| `wasmJsMain` | WebAssembly 瀏覽器 actual 實作 |
+## 平台支援
+
+| 平台 | 狀態 | 用途 |
+|------|------|------|
+| **Android** (實機) | ✅ | 主要測試裝置 |
+| **iOS arm64** (實機) | ✅ | 主要測試裝置 |
+| **JVM Desktop** (macOS/Linux) | ✅ | 多觀眾測試的第 3+ viewer |
+| iOS Simulator | ❌ | Library 不支援 |
+| JavaScript / WasmJS | ❌ | Library 尚未支援 |
 
 ---
 
-## 功能特性
+## 目前功能
 
-- 🎥 **視訊接收** - 透過 WHEP 協議接收 WebRTC 視訊串流
-- 🎤 **音訊推送** - 透過 WHIP 協議發送麥克風音訊
-- 📱 **跨平台支援** - Android、iOS、Web、Desktop
-- 🔄 **自動重連** - 可配置的指數退避重試機制
+| 功能 | MediaConfig | 狀態 |
+|------|-------------|------|
+| 接收視訊串流 (WHEP) | `RECEIVE_VIDEO` | ✅ |
+| 推送麥克風音訊 (WHIP) | `SEND_AUDIO` | ✅ |
+| 推送鏡頭視訊 (WHIP) | `SEND_VIDEO` | 🚧 規劃中 |
+| 雙向音訊通話 | `BIDIRECTIONAL_AUDIO` | 🚧 規劃中 |
+| 雙向視訊通話 | `VIDEO_CALL` | 🚧 規劃中 |
+| DataChannel 訊息 | 自訂 MediaConfig | 🚧 規劃中 |
+| 多個 VideoRenderer | 多 session | 🚧 規劃中 |
 
 ---
 
-## 依賴關係
+## Level 3 測試計畫
 
-本專案依賴 `kotlin-webrtc-client` SDK：
+此 App 需要支援 [SyncAI-Lib-KmpWebRTC Level 3 測試規格](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC/blob/main/docs/LEVEL3_MANUAL_TEST_GUIDE.md) 中的 Client 端測試（C-1 ~ C-5，共 23 項）。
+
+### C-1: Bidirectional Call (5 項)
+- `VIDEO_CALL` / `BIDIRECTIONAL_AUDIO` 雙向 session
+- `CameraPreview` 本地鏡頭預覽
+- 鏡頭切換（前/後鏡頭）
+- Mute / 關閉視訊 controls
+- DataChannel + 視訊同時運作
+
+### C-2: External IoT (5 項)
+- URL 輸入欄位（可指定任意 endpoint）
+- `WebRTCStats` 即時顯示（bitrate / latency / packet loss）
+- 雙 session 同時（`RECEIVE_VIDEO` + `SEND_AUDIO`）
+- DataChannel JSON 指令 UI
+
+### C-3: Multiple VideoRenderer (4 項)
+- 2~4 個 `VideoRenderer` 並排 / Grid 排版
+- 每個 session 獨立 connect / close
+- per-session `SessionState` 顯示
+
+### C-4: 1-to-N (4 項)
+- `SEND_VIDEO` 推鏡頭影像（含 JVM Desktop）
+- `CameraPreview` 本地預覽
+- Reconnect 狀態顯示
+
+### C-5: DataChannel (5 項)
+- 文字 / Binary 訊息發送與接收 UI
+- 多 DataChannel 管理
+- 高頻訊息吞吐量顯示
+
+---
+
+## Library 依賴
 
 ```kotlin
-// build.gradle.kts
-implementation("com.codingstable:kotlin-webrtc-client:1.1.0")
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        mavenLocal()   // 本地開發使用
+        // 或 GitHub Packages（發布版本）
+    }
+}
+
+// composeApp/build.gradle.kts
+implementation("com.syncrobotic:syncai-lib-kmpwebrtc:1.1.0")
 ```
 
-### SDK 提供的功能
+### Library 提供的核心元件
 
-| 功能 | 狀態 | 說明 |
+| 元件 | 說明 |
+|------|------|
+| `WebRTCSession` | 統一的 session 管理（WHEP/WHIP/雙向） |
+| `HttpSignalingAdapter` | HTTP WHEP/WHIP 信令適配器 |
+| `MediaConfig` | 媒體方向設定（RECEIVE_VIDEO / SEND_VIDEO / SEND_AUDIO / VIDEO_CALL ...） |
+| `VideoRenderer` | 跨平台視訊渲染 Composable |
+| `CameraPreview` | 本地鏡頭預覽 Composable |
+| `AudioPushPlayer` | 麥克風推流 Composable |
+| `WebRTCStats` | 即時連線統計（bitrate / RTT / packet loss） |
+
+---
+
+## 測試基礎建設
+
+Level 3 測試需搭配 [SyncAI-Lib-KmpWebRTC](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC) 的測試 infra 一起使用。
+
+### 啟動測試 Server
+
+```bash
+# 在 SyncAI-Lib-KmpWebRTC 專案下
+cd test-infra/
+
+# 啟動 MediaMTX + FFmpeg + Pion IoT
+docker compose up -d
+
+# 啟動 SignalingProxy (JVM in-process)
+cd ..
+./gradlew jvmTest --tests "com.syncrobotic.webrtc.level3.server.SignalingProxyServerTest"
+```
+
+### 服務一覽
+
+| 服務 | 位址 | 用途 |
 |------|------|------|
-| `WebRTCClient` | ✅ | WebRTC 客戶端核心 API |
-| `VideoRenderer` | ✅ | 跨平台視訊渲染 Composable |
-| `WhepSignaling` | ✅ | WHEP 信令 (接收串流) |
-| `WhipSignaling` | ⚠️ App 內實作 | WHIP 信令 (發送串流) - SDK 尚未提供 |
-| `AudioPushPlayer` | ⚠️ App 內實作 | 音訊推送播放器 - SDK 尚未提供 |
+| MediaMTX | `<HOST>:8889` | WHEP/WHIP media server |
+| SignalingProxy | `<HOST>:8090` | BE 信令代理（S-2, S-5 測試用） |
+| Pion IoT | `<HOST>:8080` | IoT 裝置模擬（S-3, C-5 測試用） |
+| FFmpeg | — | 模擬 IoT 攝影機推 RTSP 串流 |
 
-> ⚠️ **注意**: `WhipSignaling` 和 `AudioPushPlayer` 目前在 App 內實作，待 SDK 更新後可移除。
+### 取得本機 LAN IP（給行動裝置連線）
+
+```bash
+# macOS
+ipconfig getifaddr en0
+```
 
 ---
 
 ## 建置與執行
 
+### 前置需求
+
+- **Android:** Android Studio / `./gradlew` + Android SDK
+- **iOS:** Xcode 15+、CocoaPods (`pod install`)
+- **JVM:** JDK 11+
+
 ### Android
 
 ```bash
-# macOS/Linux
 ./gradlew :composeApp:assembleDebug
-
-# Windows
-.\gradlew.bat :composeApp:assembleDebug
+# 或直接在 Android Studio 執行
 ```
 
-### iOS
-
-使用建置腳本：
+### iOS（實機）
 
 ```bash
-# 模擬器 (Debug)
-./build-ios.sh
+# 安裝 Pods（首次）
+cd iosApp && pod install && cd ..
 
-# 實機 (Debug)
-./build-ios.sh device
-
-# 實機 (Release)
-./build-ios.sh device release
+# 在 Xcode 開啟
+open iosApp/iosApp.xcworkspace
 ```
 
-或在 Xcode 中開啟 `iosApp/iosApp.xcworkspace`。
+> ⚠️ **只支援 iOS 實機（arm64）**，模擬器目前不支援。
 
-### Desktop (JVM)
+### JVM Desktop
 
 ```bash
-# macOS/Linux
 ./gradlew :composeApp:run
-
-# Windows
-.\gradlew.bat :composeApp:run
 ```
 
-### Web (WASM)
+### 發布 Library 到 Local Maven（本地開發）
 
 ```bash
-# macOS/Linux
-./gradlew :composeApp:wasmJsBrowserDevelopmentRun
-
-# Windows
-.\gradlew.bat :composeApp:wasmJsBrowserDevelopmentRun
-```
-
-### Web (JavaScript)
-
-```bash
-# macOS/Linux
-./gradlew :composeApp:jsBrowserDevelopmentRun
-
-# Windows
-.\gradlew.bat :composeApp:jsBrowserDevelopmentRun
+# 在 SyncAI-Lib-KmpWebRTC 專案下
+./gradlew publishToMavenLocal
 ```
 
 ---
 
-## 相關專案
+## 相關連結
 
-- [kotlin-webrtc-client](../kotlin-webrtc-client) - Kotlin Multiplatform WebRTC SDK
-- [mediamtx](../mediamtx) - MediaMTX 串流伺服器設定
+- [SyncAI-Lib-KmpWebRTC](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC) — Library 主專案
+- [Level 3 測試指南](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC/blob/main/docs/LEVEL3_MANUAL_TEST_GUIDE.md)
+- [Level 3 Infra 規劃](https://github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC/blob/main/docs/LEVEL3_INFRA_PLAN.md)
 
 ---
 

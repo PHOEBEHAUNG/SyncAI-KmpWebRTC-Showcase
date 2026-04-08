@@ -2,6 +2,7 @@ package com.codingdrama.vlmwebrtc
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -13,232 +14,344 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codingdrama.vlmwebrtc.permission.*
 import com.syncrobotic.webrtc.WebRTCStats
-import com.syncrobotic.webrtc.audio.AudioPushController
+import com.syncrobotic.webrtc.audio.AudioPushPlayer
 import com.syncrobotic.webrtc.audio.AudioPushState
 import com.syncrobotic.webrtc.config.MediaConfig
+import com.syncrobotic.webrtc.session.SessionState
 import com.syncrobotic.webrtc.session.WebRTCSession
 import com.syncrobotic.webrtc.signaling.HttpSignalingAdapter
+import com.syncrobotic.webrtc.ui.CameraPreview
 import com.syncrobotic.webrtc.ui.PlayerEvent
 import com.syncrobotic.webrtc.ui.PlayerState
 import com.syncrobotic.webrtc.ui.StreamInfo
-import com.syncrobotic.webrtc.audio.AudioPushPlayer
 import com.syncrobotic.webrtc.ui.VideoRenderer
-import kotlinx.coroutines.delay
-
+import kotlin.math.round
+import kotlinx.coroutines.launch
 // ========== Color Theme ==========
-private object StreamingColors {
+private object AppColors {
     val Background = Color(0xFF0D1B2A)
-    val CardBackground = Color(0xFF1B2838)
+    val Card = Color(0xFF1B2838)
     val CardBorder = Color(0xFF2D4A5E)
-    val AccentBlue = Color(0xFF4A9EFF)
-    val AccentGreen = Color(0xFF4CAF50)
-    val AccentRed = Color(0xFFE53935)
-    val AccentOrange = Color(0xFFFF9800)
+    val Blue = Color(0xFF4A9EFF)
+    val Green = Color(0xFF4CAF50)
+    val Red = Color(0xFFE53935)
+    val Orange = Color(0xFFFF9800)
+    val Yellow = Color(0xFFFFD600)
     val TextPrimary = Color(0xFFFFFFFF)
-    val TextSecondary = Color(0xFFB0BEC5)
     val TextMuted = Color(0xFF607D8B)
-    val LogTimestamp = Color(0xFF4A9EFF)
-    val LogText = Color(0xFF90A4AE)
 }
 
-// ========== Mock System Logs ==========
-private data class LogEntry(val timestamp: String, val message: String, val isHighlighted: Boolean = false)
+// ========== MediaConfig Options ==========
+enum class MediaConfigOption(val label: String, val config: MediaConfig) {
+    RECEIVE_VIDEO("Receive Video", MediaConfig.RECEIVE_VIDEO),
+    SEND_VIDEO("Send Video", MediaConfig.SEND_VIDEO),
+    SEND_AUDIO("Send Audio", MediaConfig.SEND_AUDIO),
+    BIDIRECTIONAL("Intercom", MediaConfig.BIDIRECTIONAL_AUDIO),
+    VIDEO_CALL("Video Call", MediaConfig.VIDEO_CALL)
+}
 
-private val mockLogs = listOf(
-    LogEntry("[14:22:01]", "System initialized. Waiting for user input...", true),
-    LogEntry("[14:22:05]", "Checking hardware compatibility: OK.", true),
-    LogEntry("[14:23:10]", "Awaiting peer connection...", false)
-)
-
+// ========== Entry Point ==========
 @Composable
 fun App() {
-    StreamingView()
+    WebRTCTestScreen()
 }
 
+// ========== Main Screen ==========
 @Composable
-fun StreamingView() {
-    var showVideo by remember { mutableStateOf(false) }
-    var playerState by remember { mutableStateOf<PlayerState>(PlayerState.Idle) }
+fun WebRTCTestScreen() {
+    var urlInput by remember {
+        mutableStateOf("http://10.8.100.229:8090/api/v1/devices/iot-camera/offer")
+    }
+    var selectedConfig by remember { mutableStateOf(MediaConfigOption.RECEIVE_VIDEO) }
+    var activeSession by remember { mutableStateOf<WebRTCSession?>(null) }
+    var sessionState by remember { mutableStateOf<SessionState>(SessionState.Idle) }
+    var stats by remember { mutableStateOf<WebRTCStats?>(null) }
+    var isMuted by remember { mutableStateOf(false) }
+    var isVideoEnabled by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     var streamInfo by remember { mutableStateOf<StreamInfo?>(null) }
-    var firstFrameTime by remember { mutableStateOf<Long?>(null) }
-    var connectionStartTime by remember { mutableStateOf<Long?>(null) }
 
-    // Audio push states
-    var isCallActive by remember { mutableStateOf(false) }
-    var callDurationSeconds by remember { mutableStateOf(0) }
-    var audioPushState by remember { mutableStateOf<AudioPushState>(AudioPushState.Idle) }
-    var audioErrorMessage by remember { mutableStateOf<String?>(null) }
-    var permissionStatus by remember { mutableStateOf<PermissionStatus?>(null) }
-    var audioStats by remember { mutableStateOf<WebRTCStats?>(null) }
-
-    // Video session — receives iot-camera stream via SignalingProxy → MediaMTX
-    val videoSession = remember {
-        WebRTCSession(
-            signaling = HttpSignalingAdapter(url = "http://10.8.100.229:8090/api/v1/devices/iot-camera/offer"),
-            mediaConfig = MediaConfig.RECEIVE_VIDEO
-        )
+    // Collect session state + stats reactively
+    val coroutineScope = rememberCoroutineScope()
+    LaunchedEffect(activeSession) {
+        val session = activeSession
+        if (session != null) {
+            coroutineScope.launch { session.state.collect { sessionState = it } }
+            coroutineScope.launch { session.stats.collect { stats = it } }
+        } else {
+            sessionState = SessionState.Idle
+            stats = null
+            streamInfo = null
+        }
     }
-    DisposableEffect(videoSession) { onDispose { videoSession.close() } }
 
-    // Audio session — sends microphone audio directly to MediaMTX WHIP
-    val audioSession = remember {
-        WebRTCSession(
-            signaling = HttpSignalingAdapter(url = "http://10.8.100.229:8889/mobile-audio/whip"),
-            mediaConfig = MediaConfig.SEND_AUDIO
-        )
+    val isSessionActive = activeSession != null
+
+    DisposableEffect(Unit) {
+        onDispose { activeSession?.close() }
     }
-    DisposableEffect(audioSession) { onDispose { audioSession.close() } }
-
-    // Determine overall status
-    val isLive = showVideo && playerState is PlayerState.Playing
 
     Column(
         modifier = Modifier
-            .background(StreamingColors.Background)
+            .background(AppColors.Background)
             .fillMaxSize()
             .safeContentPadding()
             .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
 
-        // ========== Top Status Badge ==========
-        StatusBadge(isLive = isLive)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // ========== Video Preview Section ==========
-        VideoPreviewSection(
-            showVideo = showVideo,
-            playerState = playerState,
-            streamInfo = streamInfo,
-            session = videoSession,
-            onStateChange = { playerState = it },
-            onStreamInfo = { streamInfo = it },
-            onFirstFrame = { firstFrameTime = it },
-            onConnectionStart = { connectionStartTime = it }
+        // ── Title ──────────────────────────────────────────────
+        Text(
+            text = "SyncAI WebRTC Test",
+            color = AppColors.TextPrimary,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
 
-        // ========== VIDEO STREAM Section ==========
-        VideoStreamSection(
-            isLive = isLive,
-            showVideo = showVideo,
-            playerState = playerState,
-            onToggleVideo = {
-                if (showVideo) {
-                    streamInfo = null
-                    firstFrameTime = null
-                    connectionStartTime = null
-                    playerState = PlayerState.Idle
+        // ── Config Panel (hidden when session active) ───────────
+        if (!isSessionActive) {
+            ConfigPanel(
+                urlInput = urlInput,
+                selectedConfig = selectedConfig,
+                onUrlChange = { urlInput = it },
+                onConfigChange = {
+                    selectedConfig = it
+                    errorMessage = null
                 }
-                showVideo = !showVideo
+            )
+        } else {
+            // Active session summary
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .background(AppColors.Card, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = selectedConfig.label,
+                    color = AppColors.Blue,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "•",
+                    color = AppColors.TextMuted,
+                    fontSize = 12.sp
+                )
+                Text(
+                    text = urlInput,
+                    color = AppColors.TextMuted,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
             }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // ── Session State ───────────────────────────────────────
+        SessionStateBar(state = sessionState, streamInfo = streamInfo)
+
+        Spacer(Modifier.height(10.dp))
+
+        // ── Media Area ──────────────────────────────────────────
+        MediaArea(
+            config = selectedConfig,
+            session = activeSession,
+            isSessionActive = isSessionActive,
+            onStateChange = { playerState ->
+                // sync PlayerState → SessionState-like for video sessions
+            },
+            onStreamInfo = { streamInfo = it }
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
 
-        // ========== Voice Call Section ==========
-        VoiceCallSection(
-            isCallActive = isCallActive,
-            callDurationSeconds = callDurationSeconds,
-            audioPushState = audioPushState,
-            audioStats = audioStats,
-            audioErrorMessage = audioErrorMessage,
-            session = audioSession,
-            onCallStart = {
-                val currentStatus = checkPermission(Permission.RECORD_AUDIO)
-                if (currentStatus == PermissionStatus.GRANTED) {
-                    isCallActive = true
-                    callDurationSeconds = 0
-                } else {
-                    requestPermission(Permission.RECORD_AUDIO) { result ->
-                        permissionStatus = result.status
-                        if (result.status == PermissionStatus.GRANTED) {
-                            isCallActive = true
-                            callDurationSeconds = 0
-                        } else {
-                            audioErrorMessage = "Microphone permission denied"
+        // ── Controls ────────────────────────────────────────────
+        ControlsPanel(
+            isSessionActive = isSessionActive,
+            config = selectedConfig,
+            sessionState = sessionState,
+            isMuted = isMuted,
+            isVideoEnabled = isVideoEnabled,
+            errorMessage = errorMessage,
+            onConnect = {
+                errorMessage = null
+                isMuted = false
+                isVideoEnabled = true
+                connectWithPermissions(
+                    config = selectedConfig,
+                    urlInput = urlInput.trim(),
+                    onSuccess = { session ->
+                        activeSession = session
+                        // Audio-only modes need explicit connect (composables don't auto-connect)
+                        if (!selectedConfig.config.receiveVideo && !selectedConfig.config.sendVideo) {
+                            coroutineScope.launch { session.connect() }
                         }
-                    }
-                }
+                    },
+                    onError = { msg -> errorMessage = msg }
+                )
             },
-            onCallEnd = {
-                isCallActive = false
-                callDurationSeconds = 0
-                audioPushState = AudioPushState.Idle
-                audioErrorMessage = null
-                audioStats = null
+            onDisconnect = {
+                activeSession?.close()
+                activeSession = null
+                isMuted = false
+                isVideoEnabled = true
+                errorMessage = null
             },
-            onStateChange = { state ->
-                audioPushState = state
-                when (state) {
-                    is AudioPushState.Error -> audioErrorMessage = state.message
-                    is AudioPushState.Streaming -> audioErrorMessage = null
-                    else -> {}
-                }
+            onMuteToggle = {
+                isMuted = !isMuted
+                activeSession?.setMuted(isMuted)
             },
-            onStatsUpdate = { audioStats = it },
-            onDurationTick = { callDurationSeconds++ }
+            onVideoToggle = {
+                isVideoEnabled = !isVideoEnabled
+                activeSession?.setVideoEnabled(isVideoEnabled)
+            },
+            onSwitchCamera = { activeSession?.switchCamera() }
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        // ── Stats (when connected) ──────────────────────────────
+        if (isSessionActive && stats != null) {
+            Spacer(Modifier.height(12.dp))
+            StatsRow(stats = stats!!)
+        }
 
-        // ========== System Logs Section ==========
-        SystemLogsSection()
+        Spacer(Modifier.height(24.dp))
+    }
+}
 
-        Spacer(modifier = Modifier.height(16.dp))
+// ========== Config Panel ==========
+@Composable
+private fun ConfigPanel(
+    urlInput: String,
+    selectedConfig: MediaConfigOption,
+    onUrlChange: (String) -> Unit,
+    onConfigChange: (MediaConfigOption) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(AppColors.Card, RoundedCornerShape(12.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "CONFIGURATION",
+            color = AppColors.TextMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 1.sp
+        )
 
-        // Permission denied message
-        if (permissionStatus == PermissionStatus.DENIED && !isCallActive) {
+        // URL input
+        OutlinedTextField(
+            value = urlInput,
+            onValueChange = onUrlChange,
+            label = { Text("Endpoint URL", fontSize = 12.sp) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = AppColors.TextPrimary,
+                unfocusedTextColor = AppColors.TextPrimary,
+                focusedBorderColor = AppColors.Blue,
+                unfocusedBorderColor = AppColors.CardBorder,
+                focusedLabelColor = AppColors.Blue,
+                unfocusedLabelColor = AppColors.TextMuted,
+                cursorColor = AppColors.Blue
+            )
+        )
+
+        // MediaConfig chips
+        Text(
+            text = "Mode",
+            color = AppColors.TextMuted,
+            fontSize = 11.sp
+        )
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MediaConfigOption.entries.forEach { option ->
+                val isSelected = option == selectedConfig
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onConfigChange(option) },
+                    label = { Text(option.label, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = AppColors.Blue,
+                        selectedLabelColor = Color.White,
+                        containerColor = AppColors.Background,
+                        labelColor = AppColors.TextMuted
+                    )
+                )
+            }
+        }
+    }
+}
+
+// ========== Session State Bar ==========
+@Composable
+private fun SessionStateBar(state: SessionState, streamInfo: StreamInfo?) {
+    val (label, color) = when (state) {
+        is SessionState.Idle -> "Idle" to AppColors.TextMuted
+        is SessionState.Connecting -> "Connecting..." to AppColors.Orange
+        is SessionState.Connected -> "Connected" to AppColors.Green
+        is SessionState.Reconnecting -> "Reconnecting (${state.attempt}/${state.maxAttempts})" to AppColors.Yellow
+        is SessionState.Error -> "Error: ${state.message}" to AppColors.Red
+        is SessionState.Closed -> "Closed" to AppColors.TextMuted
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // State indicator dot
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(color, CircleShape)
+        )
+        Text(text = label, color = color, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+
+        Spacer(Modifier.weight(1f))
+
+        // Stream info when playing
+        streamInfo?.let {
             Text(
-                text = "Microphone permission is required for calls",
-                style = MaterialTheme.typography.bodySmall,
-                color = StreamingColors.AccentRed,
-                modifier = Modifier.padding(top = 8.dp)
+                text = "${it.height}p · ${it.fps.toInt()}fps",
+                color = AppColors.TextMuted,
+                fontSize = 11.sp
             )
         }
     }
 }
 
-// ========== Status Badge Component ==========
+// ========== Media Area ==========
 @Composable
-private fun StatusBadge(isLive: Boolean) {
-    Box(
-        modifier = Modifier
-            .background(
-                color = StreamingColors.AccentGreen,
-                shape = RoundedCornerShape(12.dp)
-            )
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-    ) {
-        Text(
-            text = if (isLive) "Live" else "Ready",
-            color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-// ========== Video Preview Section ==========
-@Composable
-private fun VideoPreviewSection(
-    showVideo: Boolean,
-    playerState: PlayerState,
-    streamInfo: StreamInfo?,
-    session: WebRTCSession,
+private fun MediaArea(
+    config: MediaConfigOption,
+    session: WebRTCSession?,
+    isSessionActive: Boolean,
     onStateChange: (PlayerState) -> Unit,
-    onStreamInfo: (StreamInfo) -> Unit,
-    onFirstFrame: (Long) -> Unit,
-    onConnectionStart: (Long) -> Unit
+    onStreamInfo: (StreamInfo) -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -246,469 +359,221 @@ private fun VideoPreviewSection(
             .padding(horizontal = 16.dp)
             .aspectRatio(16f / 9f)
             .clip(RoundedCornerShape(12.dp))
-            .background(StreamingColors.CardBackground)
-            .border(1.dp, StreamingColors.CardBorder.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+            .background(AppColors.Card)
+            .border(1.dp, AppColors.CardBorder.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+        contentAlignment = Alignment.Center
     ) {
-        if (showVideo) {
-            LaunchedEffect(Unit) {
-                onConnectionStart(currentTimeMillis())
-            }
-
-            VideoRenderer(
-                session = session,
-                modifier = Modifier.fillMaxSize(),
-                onStateChange = onStateChange,
-                onEvent = { event ->
-                    when (event) {
-                        is PlayerEvent.FirstFrameRendered -> onFirstFrame(event.timestampMs)
-                        is PlayerEvent.StreamInfoReceived -> onStreamInfo(event.info)
-                        else -> {}
-                    }
-                }
-            )
-
-            // FPS/RES Overlay (top-left)
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // FPS indicator with green dot
-                Row(
-                    modifier = Modifier
-                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    if (playerState is PlayerState.Playing) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .background(StreamingColors.AccentGreen, CircleShape)
-                        )
-                    }
-                    Text(
-                        text = "FPS: ${streamInfo?.fps?.toInt() ?: 0}",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                // Resolution
-                Box(
-                    modifier = Modifier
-                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "RES: ${streamInfo?.let { "${it.height}P" } ?: "N/A"}",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        } else {
-            // Camera Off placeholder
+        if (!isSessionActive || session == null) {
+            // Placeholder
             Column(
-                modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // FPS/RES overlay even when off
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.Start)
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "FPS: 0",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "RES: N/A",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                val icon = when (config) {
+                    MediaConfigOption.RECEIVE_VIDEO -> "\uD83D\uDCFA"
+                    MediaConfigOption.SEND_VIDEO -> "\uD83D\uDCF9"
+                    MediaConfigOption.VIDEO_CALL -> "\uD83D\uDCF1"
+                    MediaConfigOption.SEND_AUDIO -> "\uD83C\uDF99"
+                    MediaConfigOption.BIDIRECTIONAL -> "\uD83C\uDFA7"
                 }
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Camera icon placeholder
+                Text(text = icon, fontSize = 40.sp)
                 Text(
-                    text = "\uD83D\uDCF7",  // Camera emoji as placeholder
-                    fontSize = 48.sp,
-                    color = StreamingColors.TextMuted
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Camera Off",
-                    color = StreamingColors.TextPrimary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium
-                )
-
-                Text(
-                    text = "Ready to establish stream",
-                    color = StreamingColors.TextMuted,
+                    text = config.label,
+                    color = AppColors.TextMuted,
                     fontSize = 14.sp
                 )
-
-                Spacer(modifier = Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-// ========== VIDEO STREAM Section ==========
-@Composable
-private fun VideoStreamSection(
-    isLive: Boolean,
-    showVideo: Boolean,
-    playerState: PlayerState,
-    onToggleVideo: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-    ) {
-        // Section header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "VIDEO STREAM",
-                color = StreamingColors.TextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 1.sp
-            )
-
-            Text(
-                text = if (isLive) "LIVE" else "INACTIVE",
-                color = if (isLive) StreamingColors.AccentGreen else StreamingColors.TextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Toggle button
-        Button(
-            onClick = onToggleVideo,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (showVideo) StreamingColors.AccentRed else StreamingColors.AccentBlue
-            ),
-            shape = RoundedCornerShape(24.dp)
-        ) {
-            Text(
-                text = if (showVideo) "Turn Off" else "Establish Video Stream",
-                color = Color.White,
-                fontWeight = FontWeight.Medium
-            )
-        }
-    }
-}
-
-// ========== Voice Call Section ==========
-@Composable
-private fun VoiceCallSection(
-    isCallActive: Boolean,
-    callDurationSeconds: Int,
-    audioPushState: AudioPushState,
-    audioStats: WebRTCStats?,
-    audioErrorMessage: String?,
-    session: WebRTCSession,
-    onCallStart: () -> Unit,
-    onCallEnd: () -> Unit,
-    onStateChange: (AudioPushState) -> Unit,
-    onStatsUpdate: (WebRTCStats?) -> Unit,
-    onDurationTick: () -> Unit
-) {
-    // Controller reference for active calls
-    var controllerRef by remember { mutableStateOf<AudioPushController?>(null) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .background(StreamingColors.CardBackground, RoundedCornerShape(12.dp))
-            .border(1.dp, StreamingColors.CardBorder.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-            .padding(16.dp)
-    ) {
-        // Header row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
                 Text(
-                    text = "Voice Call",
-                    color = StreamingColors.TextPrimary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "Audio-only communication test",
-                    color = StreamingColors.TextMuted,
-                    fontSize = 12.sp
+                    text = "Enter URL and tap Connect",
+                    color = AppColors.TextMuted.copy(alpha = 0.6f),
+                    fontSize = 11.sp
                 )
             }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (isCallActive) {
-                    Text(
-                        text = formatDuration(callDurationSeconds),
-                        color = StreamingColors.AccentGreen,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
+        } else {
+            when (config) {
+                MediaConfigOption.RECEIVE_VIDEO -> {
+                    VideoRenderer(
+                        session = session,
+                        modifier = Modifier.fillMaxSize(),
+                        onStateChange = onStateChange,
+                        onEvent = { event ->
+                            if (event is PlayerEvent.StreamInfoReceived) onStreamInfo(event.info)
+                        }
                     )
                 }
-                // Headphone icon
-                Text(
-                    text = "\uD83C\uDFA7",  // Headphone emoji
-                    fontSize = 20.sp
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Stats row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Bitrate
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .background(StreamingColors.Background, RoundedCornerShape(8.dp))
-                    .padding(12.dp)
-            ) {
-                Text(
-                    text = "BITRATE",
-                    color = StreamingColors.TextMuted,
-                    fontSize = 10.sp,
-                    letterSpacing = 1.sp
-                )
-                Text(
-                    text = audioStats?.bitrateDisplay ?: "128 kbps",
-                    color = StreamingColors.TextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            // Latency
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .background(StreamingColors.Background, RoundedCornerShape(8.dp))
-                    .padding(12.dp)
-            ) {
-                Text(
-                    text = "LATENCY",
-                    color = StreamingColors.TextMuted,
-                    fontSize = 10.sp,
-                    letterSpacing = 1.sp
-                )
-                Text(
-                    text = audioStats?.latencyDisplay ?: "24ms",
-                    color = StreamingColors.AccentGreen,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Error message
-        audioErrorMessage?.let { error ->
-            Text(
-                text = error,
-                color = StreamingColors.AccentRed,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        }
-
-        // Call controls
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (isCallActive) {
-                // Active call UI
-                LaunchedEffect(isCallActive) {
-                    while (isCallActive) {
-                        delay(1000)
-                        onDurationTick()
-                    }
+                MediaConfigOption.SEND_VIDEO -> {
+                    CameraPreview(
+                        session = session,
+                        modifier = Modifier.fillMaxSize(),
+                        mirror = true
+                    )
                 }
-
-                val controller = AudioPushPlayer(
-                    session = session,
-                    autoStart = true,
-                    onStateChange = onStateChange
-                )
-
-                LaunchedEffect(controller) {
-                    controllerRef = controller
-                }
-
-                // Update stats periodically
-                LaunchedEffect(isCallActive) {
-                    while (isCallActive) {
-                        onStatsUpdate(controller.stats)
-                        delay(1000)
-                    }
-                }
-
-                // End Call button
-                OutlinedButton(
-                    onClick = {
-                        controller.stop()
-                        onCallEnd()
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = StreamingColors.AccentRed
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, StreamingColors.AccentRed),
-                    shape = RoundedCornerShape(24.dp)
-                ) {
-                    Text("End Call", fontWeight = FontWeight.Medium)
-                }
-
-                // Mute button
-                IconButton(
-                    onClick = { controller.toggleMute() },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            if (controller.isMuted) StreamingColors.AccentOrange else StreamingColors.AccentBlue,
-                            CircleShape
+                MediaConfigOption.VIDEO_CALL -> {
+                    // Remote video full-screen
+                    VideoRenderer(
+                        session = session,
+                        modifier = Modifier.fillMaxSize(),
+                        onStateChange = onStateChange,
+                        onEvent = { event ->
+                            if (event is PlayerEvent.StreamInfoReceived) onStreamInfo(event.info)
+                        }
+                    )
+                    // Local camera PiP — bottom-right overlay
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .size(120.dp, 90.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, AppColors.Blue, RoundedCornerShape(8.dp))
+                    ) {
+                        CameraPreview(
+                            session = session,
+                            modifier = Modifier.fillMaxSize(),
+                            mirror = true
                         )
-                ) {
-                    Text(
-                        text = if (controller.isMuted) "\uD83D\uDD07" else "\uD83C\uDF99",
-                        fontSize = 20.sp
-                    )
+                    }
                 }
-            } else {
-                // Start Call button
-                OutlinedButton(
-                    onClick = onCallStart,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = StreamingColors.AccentGreen
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, StreamingColors.AccentGreen),
-                    shape = RoundedCornerShape(24.dp)
-                ) {
-                    Text("Start Audio Call", fontWeight = FontWeight.Medium)
-                }
-
-                // Mute button (disabled when not in call)
-                IconButton(
-                    onClick = { },
-                    enabled = false,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(StreamingColors.CardBorder, CircleShape)
-                ) {
-                    Text(
-                        text = "\uD83D\uDD07",
-                        fontSize = 20.sp
-                    )
+                MediaConfigOption.SEND_AUDIO, MediaConfigOption.BIDIRECTIONAL -> {
+                    AudioOnlyArea(session = session, config = config)
                 }
             }
         }
     }
 }
 
-// ========== System Logs Section ==========
+// ========== Audio-Only Area ==========
 @Composable
-private fun SystemLogsSection() {
+private fun AudioOnlyArea(session: WebRTCSession, config: MediaConfigOption) {
+    var pushState by remember { mutableStateOf<AudioPushState>(AudioPushState.Idle) }
+
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        // Section header
+        val icon = if (config == MediaConfigOption.BIDIRECTIONAL) "\uD83C\uDFA7" else "\uD83C\uDF99"
+        Text(text = icon, fontSize = 40.sp)
+
+        Spacer(Modifier.height(8.dp))
+
+        val stateLabel = when (pushState) {
+            is AudioPushState.Idle -> "Ready"
+            is AudioPushState.Connecting -> "Connecting..."
+            is AudioPushState.Streaming -> "Streaming"
+            is AudioPushState.Muted -> "Muted"
+            is AudioPushState.Error -> "Error"
+            is AudioPushState.Disconnected -> "Disconnected"
+            else -> "Unknown"
+        }
         Text(
-            text = "SYSTEM LOGS",
-            color = StreamingColors.TextMuted,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 1.sp
+            text = stateLabel,
+            color = when (pushState) {
+                is AudioPushState.Streaming -> AppColors.Green
+                is AudioPushState.Error -> AppColors.Red
+                is AudioPushState.Muted -> AppColors.Orange
+                else -> AppColors.TextMuted
+            },
+            fontSize = 14.sp
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        // AudioPushPlayer composable (auto-starts, manages the mic)
+        AudioPushPlayer(
+            session = session,
+            autoStart = true,
+            onStateChange = { pushState = it }
+        )
+    }
+}
 
-        // Logs container
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(StreamingColors.CardBackground, RoundedCornerShape(12.dp))
-                .border(1.dp, StreamingColors.CardBorder.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            mockLogs.forEach { log ->
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+// ========== Controls Panel ==========
+@Composable
+private fun ControlsPanel(
+    isSessionActive: Boolean,
+    config: MediaConfigOption,
+    sessionState: SessionState,
+    isMuted: Boolean,
+    isVideoEnabled: Boolean,
+    errorMessage: String?,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onMuteToggle: () -> Unit,
+    onVideoToggle: () -> Unit,
+    onSwitchCamera: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Error message
+        errorMessage?.let {
+            Text(
+                text = it,
+                color = AppColors.Red,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(AppColors.Red.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+
+        if (!isSessionActive) {
+            // Connect button
+            Button(
+                onClick = onConnect,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AppColors.Blue),
+                shape = RoundedCornerShape(24.dp)
+            ) {
+                Text("Connect", color = Color.White, fontWeight = FontWeight.Medium)
+            }
+        } else {
+            // Disconnect + media controls
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Disconnect
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.Red),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Red),
+                    shape = RoundedCornerShape(24.dp)
                 ) {
-                    Text(
-                        text = log.timestamp,
-                        color = if (log.isHighlighted) StreamingColors.LogTimestamp else StreamingColors.TextMuted,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
+                    Text("Disconnect", fontWeight = FontWeight.Medium)
+                }
+
+                // Mute toggle (audio modes)
+                if (config.config.sendAudio) {
+                    MediaControlButton(
+                        onClick = onMuteToggle,
+                        icon = if (isMuted) "\uD83D\uDD07" else "\uD83C\uDF99",
+                        active = !isMuted,
+                        activeColor = AppColors.Blue,
+                        inactiveColor = AppColors.Orange
                     )
-                    Text(
-                        text = log.message,
-                        color = if (log.isHighlighted) StreamingColors.LogText else StreamingColors.TextMuted.copy(alpha = 0.6f),
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
+                }
+
+                // Video toggle (video send modes)
+                if (config.config.sendVideo) {
+                    MediaControlButton(
+                        onClick = onVideoToggle,
+                        icon = if (isVideoEnabled) "\uD83D\uDCF9" else "\uD83D\uDEAB",
+                        active = isVideoEnabled,
+                        activeColor = AppColors.Blue,
+                        inactiveColor = AppColors.TextMuted
+                    )
+
+                    // Camera switch
+                    MediaControlButton(
+                        onClick = onSwitchCamera,
+                        icon = "\uD83D\uDD04",
+                        active = true,
+                        activeColor = AppColors.Card
                     )
                 }
             }
@@ -716,22 +581,94 @@ private fun SystemLogsSection() {
     }
 }
 
-/**
- * Format seconds to MM:SS or HH:MM:SS format.
- */
-private fun formatDuration(seconds: Int): String {
-    val hours = seconds / 3600
-    val minutes = (seconds % 3600) / 60
-    val secs = seconds % 60
-
-    return if (hours > 0) {
-        "${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}"
-    } else {
-        "${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}"
+@Composable
+private fun MediaControlButton(
+    onClick: () -> Unit,
+    icon: String,
+    active: Boolean,
+    activeColor: Color,
+    inactiveColor: Color = AppColors.TextMuted
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(48.dp)
+            .background(if (active) activeColor else inactiveColor, CircleShape)
+    ) {
+        Text(text = icon, fontSize = 18.sp)
     }
 }
 
-/**
- * Get current time in milliseconds.
- */
-expect fun currentTimeMillis(): Long
+// ========== Stats Row ==========
+@Composable
+private fun StatsRow(stats: WebRTCStats) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        StatCard(label = "BITRATE", value = stats.bitrateDisplay, modifier = Modifier.weight(1f))
+        StatCard(label = "LATENCY", value = stats.latencyDisplay, modifier = Modifier.weight(1f))
+        StatCard(
+            label = "LOSS",
+            value = "${round(stats.packetLossPercent * 10) / 10}%",
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .background(AppColors.Card, RoundedCornerShape(8.dp))
+            .padding(10.dp)
+    ) {
+        Text(text = label, color = AppColors.TextMuted, fontSize = 9.sp, letterSpacing = 1.sp)
+        Text(text = value, color = AppColors.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+// ========== Permission-aware connect ==========
+private fun connectWithPermissions(
+    config: MediaConfigOption,
+    urlInput: String,
+    onSuccess: (WebRTCSession) -> Unit,
+    onError: (String) -> Unit
+) {
+    val needsCam = config.config.sendVideo
+    val needsMic = config.config.sendAudio
+
+    fun doConnect() {
+        val session = WebRTCSession(
+            signaling = HttpSignalingAdapter(url = urlInput),
+            mediaConfig = config.config
+        )
+        onSuccess(session)
+    }
+
+    fun requestMic() {
+        if (!needsMic) { doConnect(); return }
+        if (checkPermission(Permission.RECORD_AUDIO) == PermissionStatus.GRANTED) {
+            doConnect(); return
+        }
+        requestPermission(Permission.RECORD_AUDIO) { result ->
+            if (result.status == PermissionStatus.GRANTED) doConnect()
+            else onError("Microphone permission denied")
+        }
+    }
+
+    if (needsCam) {
+        if (checkPermission(Permission.CAMERA) == PermissionStatus.GRANTED) {
+            requestMic(); return
+        }
+        requestPermission(Permission.CAMERA) { result ->
+            if (result.status == PermissionStatus.GRANTED) requestMic()
+            else onError("Camera permission denied")
+        }
+    } else {
+        requestMic()
+    }
+}
+

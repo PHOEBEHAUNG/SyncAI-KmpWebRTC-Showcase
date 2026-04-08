@@ -34,7 +34,7 @@ import com.syncrobotic.webrtc.ui.VideoRenderer
 import kotlin.math.round
 import kotlinx.coroutines.launch
 // ========== Color Theme ==========
-private object AppColors {
+internal object AppColors {
     val Background = Color(0xFF0D1B2A)
     val Card = Color(0xFF1B2838)
     val CardBorder = Color(0xFF2D4A5E)
@@ -56,10 +56,52 @@ enum class MediaConfigOption(val label: String, val config: MediaConfig) {
     VIDEO_CALL("Video Call", MediaConfig.VIDEO_CALL)
 }
 
+// ========== App Tabs ==========
+internal enum class AppTab(val label: String, val icon: String) {
+    SINGLE("Single", "\uD83D\uDCE1"),
+    DATA_CHANNEL("DataChannel", "\uD83D\uDCAC"),
+    MULTI_VIEW("Multi-View", "\uD83D\uDCFA"),
+    DUAL("Dual", "\uD83D\uDD00")
+}
+
 // ========== Entry Point ==========
 @Composable
 fun App() {
-    WebRTCTestScreen()
+    var selectedTab by remember { mutableStateOf(AppTab.SINGLE) }
+    Column(
+        modifier = Modifier
+            .background(AppColors.Background)
+            .fillMaxSize()
+    ) {
+        Box(modifier = Modifier.weight(1f)) {
+            when (selectedTab) {
+                AppTab.SINGLE -> WebRTCTestScreen()
+                AppTab.DATA_CHANNEL -> DataChannelScreen()
+                AppTab.MULTI_VIEW -> MultiViewScreen()
+                AppTab.DUAL -> DualSessionScreen()
+            }
+        }
+        NavigationBar(
+            containerColor = AppColors.Card,
+            tonalElevation = 0.dp
+        ) {
+            AppTab.entries.forEach { tab ->
+                NavigationBarItem(
+                    selected = selectedTab == tab,
+                    onClick = { selectedTab = tab },
+                    icon = { Text(tab.icon, fontSize = 16.sp) },
+                    label = { Text(tab.label, fontSize = 10.sp) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = AppColors.Blue,
+                        selectedTextColor = AppColors.Blue,
+                        unselectedIconColor = AppColors.TextMuted,
+                        unselectedTextColor = AppColors.TextMuted,
+                        indicatorColor = AppColors.Blue.copy(alpha = 0.15f)
+                    )
+                )
+            }
+        }
+    }
 }
 
 // ========== Main Screen ==========

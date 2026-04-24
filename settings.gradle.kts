@@ -35,14 +35,20 @@ dependencyResolutionManagement {
         }
         mavenCentral()
         // GitHub Packages repository - commented out as we're using local Maven
-        // maven {
-        //     name = "GitHubPackages"
-        //     url = uri("https://maven.pkg.github.com/CodingStable/KotlinWebRTCClient")
-        //     credentials {
-        //         username = providers.gradleProperty("gpr.user").orNull ?: System.getenv("GITHUB_ACTOR")
-        //         password = providers.gradleProperty("gpr.key").orNull ?: System.getenv("GITHUB_TOKEN")
-        //     }
-        // }
+        maven {
+            url = uri("https://maven.pkg.github.com/Syncrobotic/SyncAI-Lib-KmpWebRTC")
+            credentials {
+                val localProps = java.util.Properties().apply {
+                    val propsFile = File(rootDir, "local.properties")
+                    if (propsFile.exists()) propsFile.inputStream().use { load(it) }
+                }
+                // put your github user name and token in local.properties
+                username = localProps.getProperty("gpr.user")
+                    ?: System.getenv("GITHUB_ACTOR")
+                password = localProps.getProperty("gpr.key")
+                    ?: System.getenv("GITHUB_TOKEN")
+            }
+        }
     }
 }
 

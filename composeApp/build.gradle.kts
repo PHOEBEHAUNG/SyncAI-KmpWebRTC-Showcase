@@ -53,8 +53,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
 
-            // Local Maven WebRTC Client SDK
-            implementation("com.syncrobotic:syncai-lib-kmpwebrtc:1.1.0")
+            implementation(libs.kmp.webrtc)
 
             // Ktor HTTP Client
             implementation(libs.ktor.client.core)
